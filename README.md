@@ -1,9 +1,15 @@
-# Oplayer
-Music player with supports OGG,AIFF,WAV, MP3
+<div align="center">
 
-Player can only decoding a audio stream
+  <h1>  Oplayer </h1>
+</div>
 
-Build prepare
+<img src="https://github.com/oditynet/Oplayer/blob/main/screen.png" height="auto" />
+
+Music player with supports OGG,AIFF,WAV, MP3 in a console.
+
+Player can only decoding a audio streams.
+
+Build prepare:
 ```
 # Ubuntu/Debian
 sudo apt-get install libmpg123-dev
@@ -29,4 +35,4 @@ Tests Multi (you can rewind music)
 gcc -o oplayer_multi oplayer_multi.c.c -lpulse-simple -lpulse -lpthread -ldl
 ```
 
-<img src="https://github.com/oditynet/Oplayer/blob/main/screen.png" height="auto" />
+
