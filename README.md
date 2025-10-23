@@ -29,4 +29,4 @@ Tests Multi (you can rewind music)
 gcc -o oplayer_multi oplayer_multi.c.c -lpulse-simple -lpulse -lpthread -ldl
 ```
 
-<img src="https://github.com/oditynet/Oplayer/blob/main/screen.png" width="250" height="auto" />
+<img src="https://github.com/oditynet/Oplayer/blob/main/screen.png" height="auto" />
