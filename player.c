@@ -180,30 +180,23 @@ AudioFormat detect_format(const char* filename) {
     FILE* file = fopen(filename, "rb");
     if (!file) return FORMAT_UNKNOWN;
     
-    unsigned char magic[3];
-    if (fread(magic, 1, 3, file) != 3) {
+    unsigned char magic[4];
+    if (fread(magic, 1, 4, file) != 4) {
         fclose(file);
         return FORMAT_UNKNOWN;
     }
-    fseek(file, 0, SEEK_SET);
+    fclose(file);
     
-    // Проверка MP3 (ID3 или frame sync)
-    if ((magic[0] == 0x49 && magic[1] == 0x44 && magic[2] == 0x33) || // ID3
-        ((magic[0] & 0xFF) == 0xFF && (magic[1] & 0xE0) == 0xE0)) {   // Frame sync
+    // Проверка MP3 (ID3v2 или frame sync)
+    if ((magic[0] == 0x49 && magic[1] == 0x44 && magic[2] == 0x33) || // ID3v2
+        (magic[0] == 0xFF && (magic[1] & 0xE0) == 0xE0)) {           // MPEG frame sync
         return FORMAT_MP3;
     }
     
-    char magic4[4];
-    if (fread(magic4, 1, 4, file) != 4) {
-        fclose(file);
-        return FORMAT_UNKNOWN;
-    }
+    if (memcmp(magic, "RIFF", 4) == 0) return FORMAT_WAV;
+    if (memcmp(magic, "FORM", 4) == 0) return FORMAT_AIFF;
+    if (memcmp(magic, "OggS", 4) == 0) return FORMAT_OGG;
     
-    if (memcmp(magic4, "RIFF", 4) == 0) return FORMAT_WAV;
-    if (memcmp(magic4, "FORM", 4) == 0) return FORMAT_AIFF;
-    if (memcmp(magic4, "OggS", 4) == 0) return FORMAT_OGG;
-    
-    fclose(file);
     return FORMAT_UNKNOWN;
 }
 
