@@ -34,13 +34,7 @@ Version 0.2:
 Build prepare:
 ```
 # Ubuntu/Debian
-sudo apt-get install libmpg123-dev
-
-# CentOS/RHEL
-sudo yum install mpg123-devel
-
-# macOS (brew)
-brew install mpg123
+sudo apt-get install libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio 
 ```
 
 Build:
