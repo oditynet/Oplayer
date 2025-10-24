@@ -3,11 +3,15 @@
   <h1>  Oplayer </h1>
 </div>
 
-<img src="https://github.com/oditynet/Oplayer/blob/main/screen.png" height="auto" />
+<img src="https://github.com/oditynet/Oplayer/blob/main/screen1.png" height="auto" />
 
 Music player with supports OGG,AIFF,WAV, MP3 in a console.
 
 Player can only decoding a audio streams.
+
+Version 0.2:
+- add console GUI
+- add navigation, loop play
 
 Build prepare:
 ```

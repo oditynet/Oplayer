@@ -14,7 +14,7 @@ $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LDFLAGS)
 
 # Правила для сборки декодеров
-libmp3decoder.so: decoders/libmp3decoder.c
+libmp3decoder.so: decoders/mp3_decoder.c
 	$(CC) -fPIC -shared  -Wall -Wextra -lm -o $@ $<
 
 
