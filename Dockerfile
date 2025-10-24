@@ -6,7 +6,7 @@ RUN apt-get update && \
     git \
     gcc \
     make \
-    libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio mpv\
+    libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio mplayer\
     && rm -rf /var/lib/apt/lists/*
 
 # Клонируем репозиторий
