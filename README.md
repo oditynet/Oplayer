@@ -12,6 +12,7 @@ Player can only decoding a audio streams.
 Version 0.2:
 - add console GUI
 - add navigation, loop play
+- bug fix of sound noise
 
 Build prepare:
 ```
@@ -31,12 +32,7 @@ Build:
 make
 ```
 
-TODO: Remove the last seconds of sound noise
-
-
-Tests Multi (you can rewind music)
+Clean:
 ```
-gcc -o oplayer_multi oplayer_multi.c.c -lpulse-simple -lpulse -lpthread -ldl
+make clean
 ```
-
-
