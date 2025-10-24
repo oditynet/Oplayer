@@ -33,8 +33,11 @@ Version 0.2:
 
 Build prepare:
 ```
-# Ubuntu/Debian
-sudo apt-get install libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio 
+# Astra linux
+sudo apt-get install libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio
+
+# Pacman
+yay -S mpg123-dev
 ```
 
 Build:
