@@ -13,7 +13,7 @@
 
 ## 📋 I can...
 
-Music player with supports OGG, AIFF, WAV, MP3, FLAC in a console.
+Music player with supports OGG, AIFF, WAV, MP3, FLAC in a console and Docker
 
 Player can only decoding a audio streams. The FLAC and MP3 formats are implemented through the mpg123 package, and the other formats are self-written
 
