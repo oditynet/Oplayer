@@ -24,7 +24,8 @@ typedef enum {
     FORMAT_WAV,
     FORMAT_AIFF,
     FORMAT_OGG,
-    FORMAT_MP3
+    FORMAT_MP3,
+    FORMAT_FLAC 
 } AudioFormat;
 
 typedef enum {
@@ -264,7 +265,8 @@ bool is_audio_file(const char* filename) {
             strcasecmp(ext, "aiff") == 0 ||
             strcasecmp(ext, "aif") == 0 ||
             strcasecmp(ext, "ogg") == 0 ||
-            strcasecmp(ext, "mp3") == 0);
+            strcasecmp(ext, "mp3") == 0 ||
+            strcasecmp(ext, "flac") == 0); 
 }
 
 // Определение формата файла
@@ -287,6 +289,7 @@ AudioFormat detect_format(const char* filename) {
     if (memcmp(magic, "RIFF", 4) == 0) return FORMAT_WAV;
     if (memcmp(magic, "FORM", 4) == 0) return FORMAT_AIFF;
     if (memcmp(magic, "OggS", 4) == 0) return FORMAT_OGG;
+     if (memcmp(magic, "fLaC", 4) == 0) return FORMAT_FLAC; 
     
     return FORMAT_UNKNOWN;
 }
@@ -439,6 +442,7 @@ void play_audio_file(const char* filename) {
         case FORMAT_AIFF: libname = "./libaiffdecoder.so"; decode_func_name = "decode_aiff"; break;
         case FORMAT_OGG: libname = "./liboggdecoder.so"; decode_func_name = "decode_ogg"; break;
         case FORMAT_MP3: libname = "./libmp3decoder.so"; decode_func_name = "decode_mp3"; break;
+        case FORMAT_FLAC: libname = "./libflacdecoder.so"; decode_func_name = "decode_flac"; break; 
         default: return;
     }
     
@@ -799,6 +803,7 @@ const char* get_format_name(AudioFormat format) {
         case FORMAT_AIFF: return "AIFF";
         case FORMAT_OGG: return "OGG";
         case FORMAT_MP3: return "MP3";
+         case FORMAT_FLAC: return "FLAC";
         default: return "UNK";
     }
 }

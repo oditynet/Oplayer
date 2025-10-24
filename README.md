@@ -9,10 +9,12 @@ Music player with supports OGG,AIFF,WAV, MP3 in a console.
 
 Player can only decoding a audio streams.
 
+Version 0.3:
+- add support FLAC
+
 Version 0.2:
 - add console GUI
 - add navigation, loop play
-- bug fix of sound noise
 
 Build prepare:
 ```
@@ -32,13 +34,12 @@ Build:
 make
 ```
 
-Clean:
+TODO: Remove the last seconds of sound noise
+
+
+Tests Multi (you can rewind music)
 ```
-make clean
+gcc -o oplayer_multi oplayer_multi.c.c -lpulse-simple -lpulse -lpthread -ldl
 ```
 
-Navigation:
- - j - Down
- - k - Up
- - r - loops mode
- - left/right arrow - +10sec / -10sec
+
