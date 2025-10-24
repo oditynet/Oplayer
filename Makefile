@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -O2
-LDFLAGS = -lpulse-simple -lpulse -ldl
+LDFLAGS = -lpulse-simple -lpulse -ldl  -lpthread -lm
 TARGET = audio_player
 SRC = player.c
 

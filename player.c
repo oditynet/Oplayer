@@ -768,6 +768,8 @@ void adjust_volume(float change) {
 
 // Поток ввода
 void* input_thread(void* arg) {
+    static float previous_volume = 0.7f; // Выносим объявление из switch
+    
     while (1) {
         int ch = getchar();
         
@@ -843,16 +845,17 @@ void* input_thread(void* arg) {
                 break;
                 
             case 'm': // Mute/Unmute
-                static float previous_volume = 0.7f;
-                if (global_volume > 0.0f) {
-                    previous_volume = global_volume;
-                    global_volume = 0.0f;
-                    printf("\rMuted        ");
-                } else {
-                    global_volume = previous_volume;
-                    printf("\rVolume: %d%%        ", (int)(global_volume * 100));
+                {
+                    if (global_volume > 0.0f) {
+                        previous_volume = global_volume;
+                        global_volume = 0.0f;
+                        printf("\rMuted        ");
+                    } else {
+                        global_volume = previous_volume;
+                        printf("\rVolume: %d%%        ", (int)(global_volume * 100));
+                    }
+                    fflush(stdout);
                 }
-                fflush(stdout);
                 break;
                 
             case 27: // Escape sequence (стрелки)
