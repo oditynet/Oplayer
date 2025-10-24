@@ -1,4 +1,3 @@
-// flacdecoder.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +15,7 @@ typedef struct {
     AudioData* audio;
     FLAC__StreamDecoder* decoder;
     uint32_t current_position;
-    float volume_scale; // Добавляем коэффициент громкости
+    float volume_scale;
 } FlacDecodeState;
 
 static FLAC__StreamDecoderWriteStatus write_callback(
@@ -101,9 +100,6 @@ static void metadata_callback(
         if (!audio->pcm_data) {
             fprintf(stderr, "Memory allocation failed\n");
         }
-        
-        printf("FLAC: %d Hz, %d channels, %d bits\n", 
-               audio->sample_rate, audio->channels, audio->bits_per_sample);
     }
 }
 
@@ -122,7 +118,7 @@ AudioData* decode_flac(const char* filename) {
     
     state.audio = audio;
     state.current_position = 0;
-    state.volume_scale = 1.0f; // По умолчанию
+    state.volume_scale = 1.0f;
     
     // Создаем декодер
     state.decoder = FLAC__stream_decoder_new();
