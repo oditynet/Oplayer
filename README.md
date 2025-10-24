@@ -9,7 +9,7 @@
 <img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/oditynet/Oplayer"></img>
 <img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/oditynet/Oplayer"></img>
 
-<img src="https://github.com/oditynet/Oplayer/blob/main/screen1.png" height="auto" />
+<img src="https://github.com/oditynet/Oplayer/blob/main/screen2.png" height="auto" />
 
 ## 📋 I can...
 
