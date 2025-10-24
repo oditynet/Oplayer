@@ -19,6 +19,7 @@ Player can only decoding a audio streams. The FLAC and MP3 formats are implement
 
 Version 0.3.1:
 - add pause
+- add volume
 
 Version 0.3:
 - add support FLAC
@@ -59,5 +60,6 @@ Key navigation:
 - n - next music play
 - p - prev music play
 - spice - Pause / Play
-- Left/Right array - -10sec / +10sec 
+- Left/Right array - -10sec / +10sec
+- +/- - Volume
 
