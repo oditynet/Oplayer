@@ -77,6 +77,9 @@ docker run -it --rm \
     -e PULSE_RUNTIME_PATH=/run/user/1000/pulse \
     oplayer
 ```
+
+If you have a problem with network in Docker, then used:  --network=host
+
 Out:
 
 ```
