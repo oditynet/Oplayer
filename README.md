@@ -9,6 +9,9 @@ Music player with supports OGG,AIFF,WAV, MP3 in a console.
 
 Player can only decoding a audio streams. The FLAC and MP3 formats are implemented through the mpg123 package, and the other formats are self-written
 
+Version 0.3.1:
+- add PAUSE
+
 Version 0.3:
 - add support FLAC
 
@@ -34,12 +37,17 @@ Build:
 make
 ```
 
-TODO: Remove the last seconds of sound noise
+Clean:
 
-
-Tests Multi (you can rewind music)
 ```
-gcc -o oplayer_multi oplayer_multi.c.c -lpulse-simple -lpulse -lpthread -ldl
+make clean
 ```
 
+Key navigation:
+j - Down
+k - Up
+n-next music play
+p-prev music play
+<spice> - Pause / Play
+Left/Right array - -10sec / +10sec 
 
