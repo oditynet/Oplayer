@@ -17,6 +17,9 @@ Music player with supports OGG, AIFF, WAV, MP3, FLAC in a console and Docker
 
 Player can only decoding a audio streams. The FLAC and MP3 formats are implemented through the mpg123 package, and the other formats are self-written
 
+Version 0.4:
+- add radio ( mpv )
+
 Version 0.3.1:
 - add pause
 - add volume
@@ -34,10 +37,10 @@ Version 0.2:
 Build prepare:
 ```
 # Astra linux
-sudo apt-get install libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio
+sudo apt-get install libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio mpv
 
 # Pacman
-yay -S mpg123-dev
+yay -S mpg123-dev mpv
 ```
 
 Build:
@@ -61,6 +64,7 @@ Key navigation:
 - Left/Right array - -10sec / +10sec
 - +/- - Volume
 - m - mute
+- e - radio
 
 # Docker
  /home/odity/Music - replace to your
