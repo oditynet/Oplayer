@@ -25,7 +25,7 @@ typedef enum {
     FORMAT_AIFF,
     FORMAT_OGG,
     FORMAT_MP3,
-    FORMAT_FLAC 
+    FORMAT_FLAC
 } AudioFormat;
 
 typedef enum {
@@ -44,6 +44,7 @@ typedef struct {
 typedef struct {
     AudioData* audio;
     bool playing;
+    bool paused;
     bool seek_requested;
     bool next_track_requested;
     size_t current_sample;
@@ -76,7 +77,9 @@ FileManager file_manager = {0};
 ProgressData* current_progress_data = NULL;
 pthread_t playback_thread = 0;
 bool global_playing = false;
+bool global_paused = false;
 char current_playing_file[MAX_PATH] = "";
+float global_volume = 0.7f;
 
 // Прототипы функций
 AudioFormat detect_format(const char* filename);
@@ -101,6 +104,8 @@ void play_next_track();
 void play_previous_track();
 void seek_forward();
 void seek_backward();
+void toggle_pause();
+void adjust_volume(float change);
 const char* get_play_mode_name(PlayMode mode);
 const char* get_format_name(AudioFormat format);
 
@@ -131,7 +136,7 @@ int main(int argc, char** argv) {
     clear_screen();
     
     printf("Audio Player File Manager\n");
-    printf("Controls: j/k - navigate, Enter - play, ←/→ - seek, q - quit, r - change mode, h - help\n");
+    printf("Controls: j/k - navigate, Enter - play, Space - pause, ←/→ - seek, q - quit, r - change mode, h - help\n");
     printf("Current mode: %s\n\n", get_play_mode_name(file_manager.play_mode));
     
     // Запускаем поток ввода
@@ -144,7 +149,7 @@ int main(int argc, char** argv) {
         usleep(50000); // 50ms
         
         // Автоматическое воспроизведение следующего трека
-        if (global_playing && current_progress_data) {
+        if (global_playing && current_progress_data && !global_paused) {
             pthread_mutex_lock(&current_progress_data->mutex);
             bool track_finished = current_progress_data->current_sample >= 
                                 current_progress_data->audio->samples_count - 1000;
@@ -266,7 +271,7 @@ bool is_audio_file(const char* filename) {
             strcasecmp(ext, "aif") == 0 ||
             strcasecmp(ext, "ogg") == 0 ||
             strcasecmp(ext, "mp3") == 0 ||
-            strcasecmp(ext, "flac") == 0); 
+            strcasecmp(ext, "flac") == 0);
 }
 
 // Определение формата файла
@@ -289,7 +294,7 @@ AudioFormat detect_format(const char* filename) {
     if (memcmp(magic, "RIFF", 4) == 0) return FORMAT_WAV;
     if (memcmp(magic, "FORM", 4) == 0) return FORMAT_AIFF;
     if (memcmp(magic, "OggS", 4) == 0) return FORMAT_OGG;
-     if (memcmp(magic, "fLaC", 4) == 0) return FORMAT_FLAC; 
+    if (memcmp(magic, "fLaC", 4) == 0) return FORMAT_FLAC;
     
     return FORMAT_UNKNOWN;
 }
@@ -304,9 +309,21 @@ void display_interface() {
     clear_screen();
     move_cursor(0, 0);
     
-    // Заголовок
-    printf("Audio Player - %s | Mode: %s\n", file_manager.current_path, get_play_mode_name(file_manager.play_mode));
-    printf("Controls: j/k: Navigate | Enter: Play | ←/→: Seek ±10s | r: Mode | n/p: Next/Prev | h: Help | q: Quit\n");
+    // Заголовок с информацией о состоянии
+    const char* state_text = "";
+    if (global_playing) {
+        state_text = global_paused ? "PAUSED" : "PLAYING";
+    } else {
+        state_text = "STOPPED";
+    }
+    
+    printf("Audio Player - %s | Mode: %s | State: %s | Volume: %d%%\n", 
+           file_manager.current_path, 
+           get_play_mode_name(file_manager.play_mode),
+           state_text,
+           (int)(global_volume * 100));
+    
+    printf("Controls: j/k: Navigate | Enter: Play | Space: Pause | ←/→: Seek ±10s | +/-: Volume | m: Mute | r: Mode | n/p: Next/Prev | h: Help | q: Quit\n");
     
     // Разделительная линия
     for (int i = 0; i < width; i++) printf("=");
@@ -329,6 +346,7 @@ void display_interface() {
         int current_sec = current_progress_data->current_sample / 
                          (current_progress_data->audio->sample_rate * current_progress_data->audio->channels);
         float progress = (float)current_sec / current_progress_data->total_seconds;
+        bool paused = current_progress_data->paused;
         pthread_mutex_unlock(&current_progress_data->mutex);
         
         display_progress_bar(progress_width, progress, current_sec, current_progress_data->total_seconds);
@@ -337,7 +355,7 @@ void display_interface() {
         move_cursor(content_height + 3, list_width + 2);
         const char* filename = strrchr(current_playing_file, '/') ? 
                               strrchr(current_playing_file, '/') + 1 : current_playing_file;
-        printf("Now Playing: %s", filename);
+        printf("Now Playing: %s %s", filename, paused ? "[PAUSED]" : "");
         
         // Информация о перемотке
         move_cursor(content_height + 4, list_width + 2);
@@ -442,7 +460,7 @@ void play_audio_file(const char* filename) {
         case FORMAT_AIFF: libname = "./libaiffdecoder.so"; decode_func_name = "decode_aiff"; break;
         case FORMAT_OGG: libname = "./liboggdecoder.so"; decode_func_name = "decode_ogg"; break;
         case FORMAT_MP3: libname = "./libmp3decoder.so"; decode_func_name = "decode_mp3"; break;
-        case FORMAT_FLAC: libname = "./libflacdecoder.so"; decode_func_name = "decode_flac"; break; 
+        case FORMAT_FLAC: libname = "./libflacdecoder.so"; decode_func_name = "decode_flac"; break;
         default: return;
     }
     
@@ -498,6 +516,7 @@ void play_audio_file(const char* filename) {
     *progress_data = (ProgressData){
         .audio = audio,
         .playing = true,
+        .paused = false,
         .seek_requested = false,
         .next_track_requested = false,
         .current_sample = 0,
@@ -509,6 +528,7 @@ void play_audio_file(const char* filename) {
     
     current_progress_data = progress_data;
     global_playing = true;
+    global_paused = false;
     strcpy(current_playing_file, filename);
     
     // Запускаем поток воспроизведения
@@ -527,6 +547,13 @@ void* playback_worker(void* arg) {
     
     while (data->playing && data->current_sample < total_samples) {
         pthread_mutex_lock(&data->mutex);
+        
+        // Проверяем паузу
+        if (data->paused) {
+            pthread_mutex_unlock(&data->mutex);
+            usleep(100000); // 100ms при паузе
+            continue;
+        }
         
         if (data->seek_requested) {
             pa_simple_flush(data->pa, &error);
@@ -548,8 +575,22 @@ void* playback_worker(void* arg) {
         size_t chunk_size = chunk_samples * bytes_per_sample;
         int16_t* chunk_data = audio->pcm_data + data->current_sample;
         
-        if (pa_simple_write(data->pa, chunk_data, chunk_size, &error) < 0) {
-            data->playing = false;
+        // Применяем громкость
+        if (global_volume != 1.0f) {
+            int16_t* volume_adjusted = malloc(chunk_size);
+            for (size_t i = 0; i < chunk_samples; i++) {
+                volume_adjusted[i] = (int16_t)(chunk_data[i] * global_volume);
+            }
+            
+            if (pa_simple_write(data->pa, volume_adjusted, chunk_size, &error) < 0) {
+                data->playing = false;
+            }
+            
+            free(volume_adjusted);
+        } else {
+            if (pa_simple_write(data->pa, chunk_data, chunk_size, &error) < 0) {
+                data->playing = false;
+            }
         }
         
         data->current_sample += chunk_samples;
@@ -560,7 +601,7 @@ void* playback_worker(void* arg) {
     // Завершение воспроизведения
     pthread_mutex_lock(&data->mutex);
     data->playing = false;
-    if (pa_simple_drain(data->pa, &error) < 0) {
+    if (!data->paused && pa_simple_drain(data->pa, &error) < 0) {
         // Игнорируем ошибки drain
     }
     pthread_mutex_unlock(&data->mutex);
@@ -568,7 +609,7 @@ void* playback_worker(void* arg) {
     // Очистка ресурсов
     pa_simple_free(data->pa);
     
-    void* decoder_lib = dlopen("./libwavdecoder.so", RTLD_LAZY); // Просто для получения функции
+    void* decoder_lib = dlopen("./libwavdecoder.so", RTLD_LAZY);
     if (decoder_lib) {
         void (*free_audio)(AudioData*) = dlsym(decoder_lib, "free_audio_data");
         if (free_audio) {
@@ -581,6 +622,7 @@ void* playback_worker(void* arg) {
     free(data);
     
     global_playing = false;
+    global_paused = false;
     current_progress_data = NULL;
     
     return NULL;
@@ -588,14 +630,16 @@ void* playback_worker(void* arg) {
 
 // Остановка текущего воспроизведения
 void stop_current_playback() {
-    if (current_progress_data && global_playing) {
+    if (current_progress_data && (global_playing || global_paused)) {
         pthread_mutex_lock(&current_progress_data->mutex);
         current_progress_data->playing = false;
+        current_progress_data->paused = false;
         current_progress_data->next_track_requested = true;
         pthread_mutex_unlock(&current_progress_data->mutex);
         
         pthread_join(playback_thread, NULL);
         global_playing = false;
+        global_paused = false;
         current_progress_data = NULL;
     }
 }
@@ -644,7 +688,7 @@ void seek_backward() {
 
 // Следующий трек
 void play_next_track() {
-    if (!global_playing) return;
+    if (!global_playing && !global_paused) return;
     
     int start_index = file_manager.selected_index;
     int current_index = start_index;
@@ -671,7 +715,7 @@ void play_next_track() {
 
 // Предыдущий трек
 void play_previous_track() {
-    if (!global_playing) return;
+    if (!global_playing && !global_paused) return;
     
     int start_index = file_manager.selected_index;
     int current_index = start_index;
@@ -693,6 +737,33 @@ void play_previous_track() {
             return;
         }
     } while (current_index != start_index);
+}
+
+// Пауза/продолжение
+void toggle_pause() {
+    if (!current_progress_data || !global_playing) return;
+    
+    pthread_mutex_lock(&current_progress_data->mutex);
+    current_progress_data->paused = !current_progress_data->paused;
+    global_paused = current_progress_data->paused;
+    pthread_mutex_unlock(&current_progress_data->mutex);
+    
+    if (global_paused) {
+        printf("\rPaused        ");
+    } else {
+        printf("\rPlaying        ");
+    }
+    fflush(stdout);
+}
+
+// Регулировка громкости
+void adjust_volume(float change) {
+    global_volume += change;
+    if (global_volume > 1.0f) global_volume = 1.0f;
+    if (global_volume < 0.0f) global_volume = 0.0f;
+    
+    printf("\rVolume: %d%%        ", (int)(global_volume * 100));
+    fflush(stdout);
 }
 
 // Поток ввода
@@ -746,6 +817,10 @@ void* input_thread(void* arg) {
                 }
                 break;
                 
+            case ' ': // Пробел - пауза/продолжение
+                toggle_pause();
+                break;
+                
             case 'r': // Смена режима воспроизведения
                 file_manager.play_mode = (file_manager.play_mode + 1) % 3;
                 break;
@@ -756,6 +831,28 @@ void* input_thread(void* arg) {
                 
             case 'p': // Предыдущий трек
                 play_previous_track();
+                break;
+                
+            case '+': // Увеличить громкость
+            case '=': // На той же клавише что и +
+                adjust_volume(0.1f);
+                break;
+                
+            case '-': // Уменьшить громкость
+                adjust_volume(-0.1f);
+                break;
+                
+            case 'm': // Mute/Unmute
+                static float previous_volume = 0.7f;
+                if (global_volume > 0.0f) {
+                    previous_volume = global_volume;
+                    global_volume = 0.0f;
+                    printf("\rMuted        ");
+                } else {
+                    global_volume = previous_volume;
+                    printf("\rVolume: %d%%        ", (int)(global_volume * 100));
+                }
+                fflush(stdout);
                 break;
                 
             case 27: // Escape sequence (стрелки)
@@ -779,6 +876,7 @@ void* input_thread(void* arg) {
             case 'q': // Выход
                 stop_current_playback();
                 global_playing = false;
+                global_paused = false;
                 exit(0);
                 break;
         }
@@ -803,7 +901,7 @@ const char* get_format_name(AudioFormat format) {
         case FORMAT_AIFF: return "AIFF";
         case FORMAT_OGG: return "OGG";
         case FORMAT_MP3: return "MP3";
-         case FORMAT_FLAC: return "FLAC";
+        case FORMAT_FLAC: return "FLAC";
         default: return "UNK";
     }
 }
@@ -855,8 +953,11 @@ void print_help(const char* program_name) {
     printf("\nControls:\n");
     printf("  j/k    - Navigate up/down\n");
     printf("  Enter  - Play selected/Open directory\n");
+    printf("  Space  - Pause/Resume\n");
     printf("  ←/→    - Seek backward/forward 10 seconds\n");
     printf("  n/p    - Next/Previous track\n");
+    printf("  +/-    - Increase/decrease volume\n");
+    printf("  m      - Mute/Unmute\n");
     printf("  r      - Change play mode\n");
     printf("  h      - Toggle help\n");
     printf("  q      - Quit\n");
