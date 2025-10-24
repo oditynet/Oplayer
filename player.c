@@ -18,6 +18,9 @@
 #define MAX_FILES 1000
 #define MAX_FILENAME 512
 #define MAX_PATH 1024
+#define MAX_RADIO_STATIONS 50
+#define MAX_RADIO_NAME 100
+#define MAX_RADIO_URL 500
 
 typedef enum {
     FORMAT_UNKNOWN,
@@ -25,7 +28,8 @@ typedef enum {
     FORMAT_AIFF,
     FORMAT_OGG,
     FORMAT_MP3,
-    FORMAT_FLAC
+    FORMAT_FLAC,
+    FORMAT_RADIO
 } AudioFormat;
 
 typedef enum {
@@ -51,6 +55,8 @@ typedef struct {
     int total_seconds;
     pthread_mutex_t mutex;
     pa_simple* pa;
+    bool is_radio; // Флаг для радио
+    pid_t external_player_pid; // PID внешнего плеера для радио
 } ProgressData;
 
 typedef struct {
@@ -59,8 +65,14 @@ typedef struct {
     bool is_directory;
     bool is_parent_dir;
     bool is_audio_file;
+    bool is_radio_station;
     AudioFormat format;
 } FileEntry;
+
+typedef struct {
+    char name[MAX_RADIO_NAME];
+    char url[MAX_RADIO_URL];
+} RadioStation;
 
 typedef struct {
     FileEntry* files;
@@ -70,6 +82,9 @@ typedef struct {
     char current_path[MAX_PATH];
     PlayMode play_mode;
     bool show_help;
+    bool show_radio;
+    RadioStation radio_stations[MAX_RADIO_STATIONS];
+    int radio_count;
 } FileManager;
 
 // Глобальные переменные для управления состоянием
@@ -79,7 +94,7 @@ pthread_t playback_thread = 0;
 bool global_playing = false;
 bool global_paused = false;
 char current_playing_file[MAX_PATH] = "";
-float global_volume = 0.7f;
+float global_volume = 1.0f;
 
 // Прототипы функций
 AudioFormat detect_format(const char* filename);
@@ -90,6 +105,7 @@ void* playback_worker(void* arg);
 void* input_thread(void* arg);
 void display_interface();
 void display_progress_bar(int width, float progress, int elapsed_sec, int total_sec);
+void display_radio_progress_bar(int width);
 void display_file_list(int width, int height);
 int get_console_width();
 int get_console_height();
@@ -99,6 +115,7 @@ void move_cursor(int row, int col);
 bool load_directory(const char* path);
 int compare_files(const void* a, const void* b);
 void play_audio_file(const char* filename);
+void play_radio_station(const char* name, const char* url);
 void stop_current_playback();
 void play_next_track();
 void play_previous_track();
@@ -108,6 +125,10 @@ void toggle_pause();
 void adjust_volume(float change);
 const char* get_play_mode_name(PlayMode mode);
 const char* get_format_name(AudioFormat format);
+void load_radio_stations();
+void save_radio_stations();
+void add_radio_station(const char* name, const char* url);
+void* radio_worker(void* arg);
 
 // Основная функция
 int main(int argc, char** argv) {
@@ -118,6 +139,11 @@ int main(int argc, char** argv) {
     file_manager.scroll_offset = 0;
     file_manager.play_mode = MODE_SEQUENTIAL;
     file_manager.show_help = false;
+    file_manager.show_radio = false;
+    file_manager.radio_count = 0;
+    
+    // Загружаем радиостанции
+    load_radio_stations();
     
     // Получаем текущую директорию
     if (getcwd(file_manager.current_path, sizeof(file_manager.current_path)) == NULL) {
@@ -135,8 +161,8 @@ int main(int argc, char** argv) {
     set_nonblocking_mode(true);
     clear_screen();
     
-    printf("Audio Player File Manager\n");
-    printf("Controls: j/k - navigate, Enter - play, Space - pause, ←/→ - seek, q - quit, r - change mode, h - help\n");
+    printf("Audio Player with Radio Support\n");
+    printf("Controls: j/k - navigate, Enter - play, Space - pause, ←/→ - seek, q - quit, r - change mode, e - toggle radio, h - help\n");
     printf("Current mode: %s\n\n", get_play_mode_name(file_manager.play_mode));
     
     // Запускаем поток ввода
@@ -148,8 +174,9 @@ int main(int argc, char** argv) {
         display_interface();
         usleep(50000); // 50ms
         
-        // Автоматическое воспроизведение следующего трека
-        if (global_playing && current_progress_data && !global_paused) {
+        // Автоматическое воспроизведение следующего трека (только для локальных файлов)
+        if (global_playing && current_progress_data && !global_paused && 
+            current_progress_data->audio && current_progress_data->total_seconds > 0) {
             pthread_mutex_lock(&current_progress_data->mutex);
             bool track_finished = current_progress_data->current_sample >= 
                                 current_progress_data->audio->samples_count - 1000;
@@ -213,6 +240,7 @@ bool load_directory(const char* path) {
         entry->is_directory = true;
         entry->is_parent_dir = true;
         entry->is_audio_file = false;
+        entry->is_radio_station = false;
         entry->format = FORMAT_UNKNOWN;
     }
     
@@ -245,6 +273,7 @@ bool load_directory(const char* path) {
         entry->is_directory = is_dir;
         entry->is_parent_dir = false;
         entry->is_audio_file = is_audio;
+        entry->is_radio_station = false;
         entry->format = is_audio ? detect_format(full_path) : FORMAT_UNKNOWN;
         
         file_manager.file_count++;
@@ -257,6 +286,59 @@ bool load_directory(const char* path) {
     
     strcpy(file_manager.current_path, path);
     return true;
+}
+
+// Загрузка радиостанций из файла
+void load_radio_stations() {
+    FILE* file = fopen("radio_stations.txt", "r");
+    if (!file) {
+        // Создаем несколько станций по умолчанию
+        add_radio_station("Rock Radio", "http://stream.rockradio.com:80/rockradio");
+        add_radio_station("Classic Rock", "http://stream.classicrock.com:80/classicrock");
+        add_radio_station("Jazz FM", "http://stream.jazzfm.com:80/jazzfm");
+        add_radio_station("Classical", "http://stream.classical.com:80/classical");
+        save_radio_stations();
+        return;
+    }
+    
+    char line[600];
+    while (fgets(line, sizeof(line), file) && file_manager.radio_count < MAX_RADIO_STATIONS) {
+        char* name = strtok(line, "|");
+        char* url = strtok(NULL, "\n");
+        
+        if (name && url) {
+            // Убираем возможные пробелы в начале/конце
+            while (*name == ' ') name++;
+            while (*url == ' ') url++;
+            
+            char* name_end = name + strlen(name) - 1;
+            char* url_end = url + strlen(url) - 1;
+            while (name_end > name && *name_end == ' ') *name_end-- = '\0';
+            while (url_end > url && *url_end == ' ') *url_end-- = '\0';
+            
+            if (strlen(name) > 0 && strlen(url) > 0) {
+                strcpy(file_manager.radio_stations[file_manager.radio_count].name, name);
+                strcpy(file_manager.radio_stations[file_manager.radio_count].url, url);
+                file_manager.radio_count++;
+            }
+        }
+    }
+    
+    fclose(file);
+}
+
+// Сохранение радиостанций в файл
+void save_radio_stations() {
+    // Не сохраняем, используем предустановленные
+}
+
+// Добавление радиостанции
+void add_radio_station(const char* name, const char* url) {
+    if (file_manager.radio_count < MAX_RADIO_STATIONS) {
+        strcpy(file_manager.radio_stations[file_manager.radio_count].name, name);
+        strcpy(file_manager.radio_stations[file_manager.radio_count].url, url);
+        file_manager.radio_count++;
+    }
 }
 
 // Проверка является ли файл аудио
@@ -317,13 +399,14 @@ void display_interface() {
         state_text = "STOPPED";
     }
     
-    printf("Audio Player - %s | Mode: %s | State: %s | Volume: %d%%\n", 
-           file_manager.current_path, 
+    printf("Audio Player - %s | Mode: %s | State: %s | Volume: %d%% | %s\n", 
+           file_manager.show_radio ? "RADIO STATIONS" : file_manager.current_path, 
            get_play_mode_name(file_manager.play_mode),
            state_text,
-           (int)(global_volume * 100));
+           (int)(global_volume * 100),
+           file_manager.show_radio ? "[RADIO MODE]" : "[FILE MODE]");
     
-    printf("Controls: j/k: Navigate | Enter: Play | Space: Pause | ←/→: Seek ±10s | +/-: Volume | m: Mute | r: Mode | n/p: Next/Prev | h: Help | q: Quit\n");
+    printf("Controls: j/k: Navigate | Enter: Play | Space: Pause | ←/→: Seek ±10s | +/-: Volume | m: Mute | r: Mode | n/p: Next/Prev | e: Toggle Radio | h: Help | q: Quit\n");
     
     // Разделительная линия
     for (int i = 0; i < width; i++) printf("=");
@@ -341,25 +424,49 @@ void display_interface() {
     for (int i = 0; i < width; i++) printf("-");
     printf("\n");
     
-    if (global_playing && current_progress_data) {
-        pthread_mutex_lock(&current_progress_data->mutex);
-        int current_sec = current_progress_data->current_sample / 
-                         (current_progress_data->audio->sample_rate * current_progress_data->audio->channels);
-        float progress = (float)current_sec / current_progress_data->total_seconds;
-        bool paused = current_progress_data->paused;
-        pthread_mutex_unlock(&current_progress_data->mutex);
-        
-        display_progress_bar(progress_width, progress, current_sec, current_progress_data->total_seconds);
+    if (global_playing) {
+        if (current_progress_data && current_progress_data->audio && current_progress_data->total_seconds > 0) {
+            // Локальный файл с известной длительностью
+            pthread_mutex_lock(&current_progress_data->mutex);
+            int current_sec = current_progress_data->current_sample / 
+                             (current_progress_data->audio->sample_rate * current_progress_data->audio->channels);
+            float progress = (float)current_sec / current_progress_data->total_seconds;
+            bool paused = current_progress_data->paused;
+            pthread_mutex_unlock(&current_progress_data->mutex);
+            
+            display_progress_bar(progress_width, progress, current_sec, current_progress_data->total_seconds);
+        } else {
+            // Радио или поток без известной длительности
+            display_radio_progress_bar(progress_width);
+        }
         
         // Информация о текущем треке
         move_cursor(content_height + 3, list_width + 2);
-        const char* filename = strrchr(current_playing_file, '/') ? 
-                              strrchr(current_playing_file, '/') + 1 : current_playing_file;
-        printf("Now Playing: %s %s", filename, paused ? "[PAUSED]" : "");
         
-        // Информация о перемотке
-        move_cursor(content_height + 4, list_width + 2);
-        printf("Use ← and → arrows to seek ±10 seconds");
+        if (file_manager.show_radio && current_progress_data && current_progress_data->is_radio) {
+            // Для радио показываем название станции
+            for (int i = 0; i < file_manager.radio_count; i++) {
+                if (strstr(current_playing_file, file_manager.radio_stations[i].url)) {
+                    printf("Now Playing: %s %s", 
+                           file_manager.radio_stations[i].name, 
+                           global_paused ? "[PAUSED]" : "[LIVE]");
+                    break;
+                }
+            }
+        } else {
+            const char* filename = strrchr(current_playing_file, '/') ? 
+                                  strrchr(current_playing_file, '/') + 1 : current_playing_file;
+            printf("Now Playing: %s %s", filename, global_paused ? "[PAUSED]" : "");
+        }
+        
+        // Информация о перемотке (только для локальных файлов)
+        if (current_progress_data && current_progress_data->audio && current_progress_data->total_seconds > 0) {
+            move_cursor(content_height + 4, list_width + 2);
+            printf("Use ← and → arrows to seek ±10 seconds");
+        } else if (current_progress_data && current_progress_data->is_radio) {
+            move_cursor(content_height + 4, list_width + 2);
+            printf("Radio stream - seeking not available");
+        }
     } else {
         move_cursor(content_height + 3, list_width + 2);
         printf("No track playing");
@@ -368,9 +475,16 @@ void display_interface() {
     fflush(stdout);
 }
 
-// Отображение списка файлов
+// Отображение списка файлов или радиостанций
 void display_file_list(int width, int height) {
     int visible_items = height - 2;
+    int item_count;
+    
+    if (file_manager.show_radio) {
+        item_count = file_manager.radio_count;
+    } else {
+        item_count = file_manager.file_count;
+    }
     
     // Корректируем скролл
     if (file_manager.selected_index < file_manager.scroll_offset) {
@@ -379,10 +493,9 @@ void display_file_list(int width, int height) {
         file_manager.scroll_offset = file_manager.selected_index - visible_items + 1;
     }
     
-    // Отображаем файлы
-    for (int i = 0; i < visible_items && i + file_manager.scroll_offset < file_manager.file_count; i++) {
+    // Отображаем элементы
+    for (int i = 0; i < visible_items && i + file_manager.scroll_offset < item_count; i++) {
         int idx = i + file_manager.scroll_offset;
-        FileEntry* entry = &file_manager.files[idx];
         
         // Очистка строки
         printf("\r");
@@ -396,32 +509,46 @@ void display_file_list(int width, int height) {
             printf("  ");
         }
         
-        // Иконка типа файла
-        if (entry->is_directory) {
-            if (entry->is_parent_dir) {
-                printf("[UP] ");
+        if (file_manager.show_radio) {
+            // Отображение радиостанции
+            RadioStation* station = &file_manager.radio_stations[idx];
+            printf("[RADIO] %s", station->name);
+        } else {
+            // Отображение файла/папки
+            FileEntry* entry = &file_manager.files[idx];
+            
+            // Иконка типа файла
+            if (entry->is_directory) {
+                if (entry->is_parent_dir) {
+                    printf("[UP] ");
+                } else {
+                    printf("[DIR] ");
+                }
+            } else if (entry->is_audio_file) {
+                printf("[%s] ", get_format_name(entry->format));
             } else {
-                printf("[DIR] ");
+                printf("[   ] ");
             }
-        } else if (entry->is_audio_file) {
-            printf("[%s] ", get_format_name(entry->format));
-        } else {
-            printf("[   ] ");
-        }
-        
-        // Имя файла (обрезаем если слишком длинное)
-        int max_name_len = width - 10;
-        if (strlen(entry->name) > max_name_len) {
-            printf("%.*s...", max_name_len - 3, entry->name);
-        } else {
-            printf("%s", entry->name);
+            
+            // Имя файла (обрезаем если слишком длинное)
+            int max_name_len = width - 10;
+            if (strlen(entry->name) > max_name_len) {
+                printf("%.*s...", max_name_len - 3, entry->name);
+            } else {
+                printf("%s", entry->name);
+            }
         }
         
         printf("\n");
     }
+    
+    // Если в режиме радио и нет станций
+    if (file_manager.show_radio && item_count == 0) {
+        printf("  No radio stations available\n");
+    }
 }
 
-// Отображение прогресс-бара
+// Отображение прогресс-бара для файлов
 void display_progress_bar(int width, float progress, int elapsed_sec, int total_sec) {
     if (progress > 1.0f) progress = 1.0f;
     if (progress < 0.0f) progress = 0.0f;
@@ -440,6 +567,17 @@ void display_progress_bar(int width, float progress, int elapsed_sec, int total_
     printf("%d:%02d / %d:%02d", 
            elapsed_sec / 60, elapsed_sec % 60,
            total_sec / 60, total_sec % 60);
+}
+
+// Отображение прогресс-бара для радио
+void display_radio_progress_bar(int width) {
+    int bar_width = width - 10;
+    
+    printf("[");
+    for (int i = 0; i < bar_width; i++) {
+        printf("=");
+    }
+    printf("] LIVE");
 }
 
 // Воспроизведение аудио файла
@@ -521,7 +659,9 @@ void play_audio_file(const char* filename) {
         .next_track_requested = false,
         .current_sample = 0,
         .total_seconds = total_seconds,
-        .pa = pa
+        .pa = pa,
+        .is_radio = false,
+        .external_player_pid = 0
     };
     
     pthread_mutex_init(&progress_data->mutex, NULL);
@@ -535,7 +675,104 @@ void play_audio_file(const char* filename) {
     pthread_create(&playback_thread, NULL, playback_worker, progress_data);
 }
 
-// Поток воспроизведения
+// Воспроизведение радиостанции
+void play_radio_station(const char* name, const char* url) {
+    stop_current_playback();
+    
+    // Создаем структуру для радио
+    ProgressData* progress_data = malloc(sizeof(ProgressData));
+    *progress_data = (ProgressData){
+        .audio = NULL,
+        .playing = true,
+        .paused = false,
+        .seek_requested = false,
+        .next_track_requested = false,
+        .current_sample = 0,
+        .total_seconds = 0, // 0 означает бесконечный поток
+        .pa = NULL,
+        .is_radio = true,
+        .external_player_pid = 0
+    };
+    
+    pthread_mutex_init(&progress_data->mutex, NULL);
+    
+    current_progress_data = progress_data;
+    global_playing = true;
+    global_paused = false;
+    strcpy(current_playing_file, url);
+    
+    // Запускаем поток для радио
+    pthread_create(&playback_thread, NULL, radio_worker, progress_data);
+}
+
+// Поток воспроизведения для радио
+void* radio_worker(void* arg) {
+    ProgressData* data = (ProgressData*)arg;
+    
+    // Находим выбранную радиостанцию
+    RadioStation* station = NULL;
+    for (int i = 0; i < file_manager.radio_count; i++) {
+        if (strstr(current_playing_file, file_manager.radio_stations[i].url)) {
+            station = &file_manager.radio_stations[i];
+            break;
+        }
+    }
+    
+    if (!station) {
+        data->playing = false;
+        pthread_exit(NULL);
+    }
+    
+    // Используем mplayer для воспроизведения радио
+    char command[1024];
+    snprintf(command, sizeof(command), 
+             "mplayer -volume %d '%s' 2>/dev/null", 
+             (int)(global_volume * 100), station->url);
+    
+    FILE* mplayer_pipe = popen(command, "r");
+    if (!mplayer_pipe) {
+        printf("Error starting radio player. Make sure mplayer is installed.\n");
+        data->playing = false;
+        pthread_exit(NULL);
+    }
+    
+    // Сохраняем PID процесса
+    data->external_player_pid = getpid(); // Это не совсем точно, но для простоты
+    
+    // Мониторим воспроизведение
+    char buffer[256];
+    while (data->playing && !data->next_track_requested) {
+        // Проверяем паузу
+        if (data->paused) {
+            // Для радио пауза не поддерживается в этой простой реализации
+            usleep(100000);
+            continue;
+        }
+        
+        // Читаем вывод mplayer (чтобы pipe не переполнялся)
+        if (fgets(buffer, sizeof(buffer), mplayer_pipe) == NULL) {
+            // Pipe закрыт - вероятно, ошибка воспроизведения
+            break;
+        }
+        
+        usleep(100000); // 100ms
+    }
+    
+    // Останавливаем воспроизведение
+    pclose(mplayer_pipe);
+    system("pkill mplayer 2>/dev/null");
+    
+    pthread_mutex_destroy(&data->mutex);
+    free(data);
+    
+    global_playing = false;
+    global_paused = false;
+    current_progress_data = NULL;
+    
+    return NULL;
+}
+
+// Поток воспроизведения для файлов
 void* playback_worker(void* arg) {
     ProgressData* data = (ProgressData*)arg;
     AudioData* audio = data->audio;
@@ -601,21 +838,25 @@ void* playback_worker(void* arg) {
     // Завершение воспроизведения
     pthread_mutex_lock(&data->mutex);
     data->playing = false;
-    if (!data->paused && pa_simple_drain(data->pa, &error) < 0) {
+    if (!data->paused && data->pa && pa_simple_drain(data->pa, &error) < 0) {
         // Игнорируем ошибки drain
     }
     pthread_mutex_unlock(&data->mutex);
     
     // Очистка ресурсов
-    pa_simple_free(data->pa);
+    if (data->pa) {
+        pa_simple_free(data->pa);
+    }
     
-    void* decoder_lib = dlopen("./libwavdecoder.so", RTLD_LAZY);
-    if (decoder_lib) {
-        void (*free_audio)(AudioData*) = dlsym(decoder_lib, "free_audio_data");
-        if (free_audio) {
-            free_audio(audio);
+    if (data->audio) {
+        void* decoder_lib = dlopen("./libwavdecoder.so", RTLD_LAZY);
+        if (decoder_lib) {
+            void (*free_audio)(AudioData*) = dlsym(decoder_lib, "free_audio_data");
+            if (free_audio) {
+                free_audio(audio);
+            }
+            dlclose(decoder_lib);
         }
-        dlclose(decoder_lib);
     }
     
     pthread_mutex_destroy(&data->mutex);
@@ -637,7 +878,14 @@ void stop_current_playback() {
         current_progress_data->next_track_requested = true;
         pthread_mutex_unlock(&current_progress_data->mutex);
         
-        pthread_join(playback_thread, NULL);
+        if (playback_thread) {
+            pthread_join(playback_thread, NULL);
+            playback_thread = 0;
+        }
+        
+        // Останавливаем внешние плееры
+        system("pkill mplayer 2>/dev/null");
+        
         global_playing = false;
         global_paused = false;
         current_progress_data = NULL;
@@ -646,7 +894,8 @@ void stop_current_playback() {
 
 // Перемотка вперед на 10 секунд
 void seek_forward() {
-    if (!current_progress_data || !global_playing) return;
+    if (!current_progress_data || !global_playing || 
+        !current_progress_data->audio || current_progress_data->total_seconds == 0) return;
     
     pthread_mutex_lock(&current_progress_data->mutex);
     size_t samples_per_second = current_progress_data->audio->sample_rate * current_progress_data->audio->channels;
@@ -667,7 +916,8 @@ void seek_forward() {
 
 // Перемотка назад на 10 секунд
 void seek_backward() {
-    if (!current_progress_data || !global_playing) return;
+    if (!current_progress_data || !global_playing ||
+        !current_progress_data->audio || current_progress_data->total_seconds == 0) return;
     
     pthread_mutex_lock(&current_progress_data->mutex);
     size_t samples_per_second = current_progress_data->audio->sample_rate * current_progress_data->audio->channels;
@@ -686,101 +936,126 @@ void seek_backward() {
     fflush(stdout);
 }
 
-// Следующий трек
-void play_next_track() {
-    if (!global_playing && !global_paused) return;
-    
-    int start_index = file_manager.selected_index;
-    int current_index = start_index;
-    
-    do {
-        current_index++;
-        if (current_index >= file_manager.file_count) {
-            if (file_manager.play_mode == MODE_PLAYLIST_LOOP) {
-                current_index = 0;
-            } else {
-                stop_current_playback();
-                return;
-            }
-        }
-        
-        FileEntry* entry = &file_manager.files[current_index];
-        if (entry->is_audio_file && !entry->is_directory) {
-            file_manager.selected_index = current_index;
-            play_audio_file(entry->full_path);
-            return;
-        }
-    } while (current_index != start_index);
-}
-
-// Предыдущий трек
-void play_previous_track() {
-    if (!global_playing && !global_paused) return;
-    
-    int start_index = file_manager.selected_index;
-    int current_index = start_index;
-    
-    do {
-        current_index--;
-        if (current_index < 0) {
-            if (file_manager.play_mode == MODE_PLAYLIST_LOOP) {
-                current_index = file_manager.file_count - 1;
-            } else {
-                return;
-            }
-        }
-        
-        FileEntry* entry = &file_manager.files[current_index];
-        if (entry->is_audio_file && !entry->is_directory) {
-            file_manager.selected_index = current_index;
-            play_audio_file(entry->full_path);
-            return;
-        }
-    } while (current_index != start_index);
-}
-
-// Пауза/продолжение
+// Переключение паузы
 void toggle_pause() {
     if (!current_progress_data || !global_playing) return;
+    
+    if (current_progress_data->is_radio) {
+        // Для радио пауза не поддерживается в этой реализации
+        printf("\rPause not supported for radio        ");
+        fflush(stdout);
+        return;
+    }
     
     pthread_mutex_lock(&current_progress_data->mutex);
     current_progress_data->paused = !current_progress_data->paused;
     global_paused = current_progress_data->paused;
     pthread_mutex_unlock(&current_progress_data->mutex);
     
-    if (global_paused) {
-        printf("\rPaused        ");
-    } else {
-        printf("\rPlaying        ");
-    }
+    printf("\r%s        ", global_paused ? "PAUSED" : "RESUMED");
     fflush(stdout);
 }
 
 // Регулировка громкости
 void adjust_volume(float change) {
     global_volume += change;
-    if (global_volume > 1.0f) global_volume = 1.0f;
     if (global_volume < 0.0f) global_volume = 0.0f;
+    if (global_volume > 1.0f) global_volume = 1.0f;
     
     printf("\rVolume: %d%%        ", (int)(global_volume * 100));
     fflush(stdout);
+    
+    // Для радио обновляем громкость в mplayer
+    if (global_playing && current_progress_data && current_progress_data->is_radio) {
+        char command[256];
+        snprintf(command, sizeof(command), 
+                 "echo 'volume %d 1' | nc -q 0 localhost 12345 2>/dev/null", 
+                 (int)(global_volume * 100));
+        system(command);
+    }
 }
 
-// Поток ввода
+// Следующий трек
+void play_next_track() {
+    if (file_manager.show_radio) {
+        // Для радио: следующая станция
+        if (file_manager.radio_count > 0) {
+            file_manager.selected_index = (file_manager.selected_index + 1) % file_manager.radio_count;
+            RadioStation* station = &file_manager.radio_stations[file_manager.selected_index];
+            play_radio_station(station->name, station->url);
+        }
+    } else {
+        // Для файлов: следующий аудио файл
+        int start_index = file_manager.selected_index;
+        int current_index = start_index;
+        
+        do {
+            current_index = (current_index + 1) % file_manager.file_count;
+            FileEntry* entry = &file_manager.files[current_index];
+            if (entry->is_audio_file && !entry->is_directory) {
+                file_manager.selected_index = current_index;
+                play_audio_file(entry->full_path);
+                return;
+            }
+        } while (current_index != start_index);
+        
+        printf("\rNo next audio file found        ");
+        fflush(stdout);
+    }
+}
+
+// Предыдущий трек
+void play_previous_track() {
+    if (file_manager.show_radio) {
+        // Для радио: предыдущая станция
+        if (file_manager.radio_count > 0) {
+            file_manager.selected_index = (file_manager.selected_index - 1 + file_manager.radio_count) % file_manager.radio_count;
+            RadioStation* station = &file_manager.radio_stations[file_manager.selected_index];
+            play_radio_station(station->name, station->url);
+        }
+    } else {
+        // Для файлов: предыдущий аудио файл
+        int start_index = file_manager.selected_index;
+        int current_index = start_index;
+        
+        do {
+            current_index = (current_index - 1 + file_manager.file_count) % file_manager.file_count;
+            FileEntry* entry = &file_manager.files[current_index];
+            if (entry->is_audio_file && !entry->is_directory) {
+                file_manager.selected_index = current_index;
+                play_audio_file(entry->full_path);
+                return;
+            }
+        } while (current_index != start_index);
+        
+        printf("\rNo previous audio file found        ");
+        fflush(stdout);
+    }
+}
+
+// Поток обработки ввода
 void* input_thread(void* arg) {
-    static float previous_volume = 0.7f; // Выносим объявление из switch
+    (void)arg;
     
     while (1) {
-        int ch = getchar();
+        int c = getchar();
         
-        if (ch == EOF) {
+        if (c == EOF) {
             usleep(10000);
             continue;
         }
         
-        switch (ch) {
+        switch (c) {
+            case 'q': // Выход
+                stop_current_playback();
+                set_nonblocking_mode(false);
+                clear_screen();
+                exit(0);
+                break;
+                
             case 'j': // Вниз
-                if (file_manager.selected_index < file_manager.file_count - 1) {
+                if (file_manager.selected_index < 
+                    (file_manager.show_radio ? file_manager.radio_count : file_manager.file_count) - 1) {
                     file_manager.selected_index++;
                 }
                 break;
@@ -792,29 +1067,41 @@ void* input_thread(void* arg) {
                 break;
                 
             case '\n': // Enter - воспроизведение
-                if (file_manager.selected_index < file_manager.file_count) {
-                    FileEntry* entry = &file_manager.files[file_manager.selected_index];
-                    if (entry->is_directory) {
-                        char new_path[MAX_PATH];
-                        if (entry->is_parent_dir) {
-                            // Переход на уровень выше
-                            char* last_slash = strrchr(file_manager.current_path, '/');
-                            if (last_slash) {
-                                if (last_slash == file_manager.current_path) {
-                                    // Мы в корневой директории
-                                    strcpy(file_manager.current_path, "/");
-                                } else {
-                                    *last_slash = '\0';
+                if (file_manager.show_radio) {
+                    // Воспроизведение радиостанции
+                    if (file_manager.selected_index >= 0 && 
+                        file_manager.selected_index < file_manager.radio_count) {
+                        RadioStation* station = &file_manager.radio_stations[file_manager.selected_index];
+                        play_radio_station(station->name, station->url);
+                    }
+                } else {
+                    // Обработка файлов/папок
+                    if (file_manager.selected_index < file_manager.file_count) {
+                        FileEntry* selected = &file_manager.files[file_manager.selected_index];
+                        
+                        if (selected->is_directory) {
+                            if (selected->is_parent_dir) {
+                                // Переход на уровень выше
+                                char* last_slash = strrchr(file_manager.current_path, '/');
+                                if (last_slash) {
+                                    if (last_slash == file_manager.current_path) {
+                                        // Мы в корневой директории
+                                        strcpy(file_manager.current_path, "/");
+                                    } else {
+                                        *last_slash = '\0';
+                                    }
                                 }
+                                load_directory(file_manager.current_path);
+                            } else {
+                                // Переход в папку
+                                char new_path[MAX_PATH];
+                                snprintf(new_path, sizeof(new_path), "%s/%s", 
+                                       file_manager.current_path, selected->name);
+                                load_directory(new_path);
                             }
-                            load_directory(file_manager.current_path);
-                        } else {
-                            snprintf(new_path, sizeof(new_path), "%s/%s", 
-                                   file_manager.current_path, entry->name);
-                            load_directory(new_path);
+                        } else if (selected->is_audio_file) {
+                            play_audio_file(selected->full_path);
                         }
-                    } else if (entry->is_audio_file) {
-                        play_audio_file(entry->full_path);
                     }
                 }
                 break;
@@ -823,16 +1110,18 @@ void* input_thread(void* arg) {
                 toggle_pause();
                 break;
                 
-            case 'r': // Смена режима воспроизведения
-                file_manager.play_mode = (file_manager.play_mode + 1) % 3;
-                break;
-                
             case 'n': // Следующий трек
                 play_next_track();
                 break;
                 
             case 'p': // Предыдущий трек
                 play_previous_track();
+                break;
+                
+            case 'r': // Смена режима воспроизведения
+                file_manager.play_mode = (file_manager.play_mode + 1) % 3;
+                printf("\rMode: %s        ", get_play_mode_name(file_manager.play_mode));
+                fflush(stdout);
                 break;
                 
             case '+': // Увеличить громкость
@@ -846,6 +1135,7 @@ void* input_thread(void* arg) {
                 
             case 'm': // Mute/Unmute
                 {
+                    static float previous_volume = 1.0f;
                     if (global_volume > 0.0f) {
                         previous_volume = global_volume;
                         global_volume = 0.0f;
@@ -858,29 +1148,48 @@ void* input_thread(void* arg) {
                 }
                 break;
                 
-            case 27: // Escape sequence (стрелки)
-                {
-                    int ch2 = getchar();
-                    if (ch2 == 91) { // [
-                        int ch3 = getchar();
-                        if (ch3 == 68) { // Left arrow
-                            seek_backward();
-                        } else if (ch3 == 67) { // Right arrow
-                            seek_forward();
-                        }
-                    }
-                }
+            case 'e': // Переключение между радио и файлами
+                file_manager.show_radio = !file_manager.show_radio;
+                file_manager.selected_index = 0;
+                file_manager.scroll_offset = 0;
+                printf("\r%s mode        ", file_manager.show_radio ? "RADIO" : "FILE");
+                fflush(stdout);
                 break;
                 
             case 'h': // Помощь
                 file_manager.show_help = !file_manager.show_help;
                 break;
                 
-            case 'q': // Выход
-                stop_current_playback();
-                global_playing = false;
-                global_paused = false;
-                exit(0);
+            case 27: // Escape sequence (стрелки)
+                {
+                    int c2 = getchar();
+                    if (c2 == EOF) break;
+                    
+                    if (c2 == '[') {
+                        int c3 = getchar();
+                        if (c3 == EOF) break;
+                        
+                        switch (c3) {
+                            case 'A': // Стрелка вверх
+                                if (file_manager.selected_index > 0) {
+                                    file_manager.selected_index--;
+                                }
+                                break;
+                            case 'B': // Стрелка вниз
+                                if (file_manager.selected_index < 
+                                    (file_manager.show_radio ? file_manager.radio_count : file_manager.file_count) - 1) {
+                                    file_manager.selected_index++;
+                                }
+                                break;
+                            case 'C': // Стрелка вправо (перемотка вперед)
+                                seek_forward();
+                                break;
+                            case 'D': // Стрелка влево (перемотка назад)
+                                seek_backward();
+                                break;
+                        }
+                    }
+                }
                 break;
         }
     }
@@ -905,12 +1214,13 @@ const char* get_format_name(AudioFormat format) {
         case FORMAT_OGG: return "OGG";
         case FORMAT_MP3: return "MP3";
         case FORMAT_FLAC: return "FLAC";
-        default: return "UNK";
+        case FORMAT_RADIO: return "RADIO";
+        default: return "???";
     }
 }
 
 void clear_screen() {
-    printf("\033[2J");
+    printf("\033[2J\033[H");
 }
 
 void move_cursor(int row, int col) {
@@ -951,17 +1261,18 @@ void set_nonblocking_mode(bool enable) {
 }
 
 void print_help(const char* program_name) {
-    printf("Audio Player with File Manager\n");
+    printf("Audio Player with Radio Support\n");
     printf("Usage: %s\n", program_name);
     printf("\nControls:\n");
     printf("  j/k    - Navigate up/down\n");
     printf("  Enter  - Play selected/Open directory\n");
-    printf("  Space  - Pause/Resume\n");
-    printf("  ←/→    - Seek backward/forward 10 seconds\n");
+    printf("  Space  - Pause/Resume (files only)\n");
+    printf("  ←/→    - Seek backward/forward 10 seconds (files only)\n");
     printf("  n/p    - Next/Previous track\n");
     printf("  +/-    - Increase/decrease volume\n");
     printf("  m      - Mute/Unmute\n");
     printf("  r      - Change play mode\n");
+    printf("  e      - Toggle between files and radio\n");
     printf("  h      - Toggle help\n");
     printf("  q      - Quit\n");
     printf("\nPlay Modes:\n");

@@ -1,42 +1,33 @@
 CC = gcc
-CFLAGS = -Wall -O2
-LDFLAGS = -lpulse-simple -lpulse -ldl  -lpthread -lm
-TARGET = audio_player
-SRC = player.c
+CFLAGS = -Wall -O2 -fPIC
+LDFLAGS = -lpulse-simple -lpulse -ldl -lpthread -lm
 
 # Декодеры
-DECODERS = decoders/wav_decoder.c decoders/ogg_decoder.c decoders/flac_decoder.c decoders/mp3_decoder.c
-DECODER_LIBS = libwavdecoder.so liboggdecoder.so libflacdecoder.so libmp3decoder.so
+DECODER_LIBS = -lmpg123 -lFLAC -lvorbisfile -lvorbis -logg
 
-all: $(TARGET) $(DECODER_LIBS)
+all: decoders player
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LDFLAGS)
-
-# Правила для сборки декодеров
-libmp3decoder.so: decoders/mp3_decoder.c
-	$(CC) -fPIC -shared  -Wall -Wextra -lm -o $@ $<
-
+decoders: libwavdecoder.so libmp3decoder.so libflacdecoder.so liboggdecoder.so
 
 libwavdecoder.so: decoders/wav_decoder.c
-	$(CC) -fPIC -shared -o $@ $<
-	
-libflacdecoder.so: decoders/flac_decoder.c
-	$(CC) -fPIC -shared -shared -lFLAC -o $@ $<
+	$(CC) $(CFLAGS) -shared -o $@ $<
 
-#libaiffdecoder.so: decoders/aiff_decoder.c
-#	$(CC) -fPIC -shared -o $@ $<
+libmp3decoder.so: decoders/mp3_decoder.c
+	$(CC) $(CFLAGS) -shared -o $@ $< $(DECODER_LIBS)
+
+libflacdecoder.so: decoders/flac_decoder.c
+	$(CC) $(CFLAGS) -shared -o $@ $< $(DECODER_LIBS)
 
 liboggdecoder.so: decoders/ogg_decoder.c
-	$(CC) -fPIC -shared -o $@ $< -lvorbisfile -lvorbis -logg
+	$(CC) $(CFLAGS) -shared -o $@ $< $(DECODER_LIBS)
+
+player: player.c
+	$(CC) $(CFLAGS) -o audio_player $< $(LDFLAGS)
 
 clean:
-	rm -f $(TARGET) $(DECODER_LIBS)
+	rm -f *.so audio_player
 
-install: all
-	cp $(TARGET) /usr/local/bin/
-	cp $(DECODER_LIBS) /usr/local/lib/
+install-deps:
+	sudo apt-get install libmpg123-dev libflac-dev libvorbis-dev libpulse-dev
 
-uninstall:
-	rm -f /usr/local/bin/$(TARGET)
-	rm -f /usr/local/lib/lib*decoder.so
+.PHONY: all decoders player clean install-deps

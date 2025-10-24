@@ -1,0 +1,5 @@
+cassetre|https://vm65162.streamerr.co/listen/cassette_radio/radio.mp3
+Внеформата|http://i-radio.info:8020/radio
+Europa+|https://ep128.hostingradio.ru:8030/ep128
+E+Volgodonsk|http://emgregion.hostingradio.ru:8064/voronezh.europaplus.mp3
+Dance|http://europaplus.hostingradio.ru:8014/ep-residance128.mp3
