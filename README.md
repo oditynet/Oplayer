@@ -54,10 +54,10 @@ make clean
 ```
 
 Key navigation:
-j - Down
-k - Up
-n-next music play
-p-prev music play
-<spice> - Pause / Play
-Left/Right array - -10sec / +10sec 
+- j - Down
+- k - Up
+- n - next music play
+- p - prev music play
+- spice - Pause / Play
+- Left/Right array - -10sec / +10sec 
 
