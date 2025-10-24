@@ -73,4 +73,25 @@ docker run -it --rm \
     -e PULSE_RUNTIME_PATH=/run/user/1000/pulse \
     oplayer
 ```
+Out:
 
+```
+ odity@viva  /tmp/Oplayer   main ± docker build -t oplayer .                                                                              
+[+] Building 1.9s (11/11) FINISHED                                                                                                                             docker:default
+ => [internal] load build definition from Dockerfile                                                                                                                     0.0s
+ => => transferring dockerfile: 811B                                                                                                                                     0.0s
+ => [internal] load metadata for docker.io/library/alt:latest                                                                                                            1.7s
+ => [auth] library/alt:pull token for registry-1.docker.io                                                                                                               0.0s
+ => [internal] load .dockerignore                                                                                                                                        0.0s
+ => => transferring context: 2B                                                                                                                                          0.0s
+ => [1/6] FROM docker.io/library/alt:latest@sha256:a32f2a8a3aaa0bde41263bbdf9fd23264fc846feb280f5adb961ab4f34e5f5c5                                                      0.0s
+ => CACHED [2/6] RUN apt-get update &&     apt-get install -y     git     gcc     make     libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  puls  0.0s
+ => CACHED [3/6] RUN git clone https://github.com/oditynet/Oplayer.git /app                                                                                              0.0s
+ => CACHED [4/6] WORKDIR /app                                                                                                                                            0.0s
+ => CACHED [5/6] RUN make                                                                                                                                                0.0s
+ => CACHED [6/6] RUN useradd -m -u 1000 audioapp &&     chown -R audioapp:audioapp /app                                                                                  0.0s
+ => exporting to image                                                                                                                                                   0.0s
+ => => exporting layers                                                                                                                                                  0.0s
+ => => writing image sha256:4bc921cba82893548f6bfc525f4b52ad1076a513c4649116a489495e929b264c                                                                             0.0s
+ => => naming to docker.io/library/oplayer   
+```
