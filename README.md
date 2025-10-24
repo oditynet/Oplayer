@@ -62,3 +62,15 @@ Key navigation:
 - +/- - Volume
 - m - mute
 
+# Docker
+ /home/odity/Music - replace to your
+```
+docker build -t oplayer .
+
+docker run -it --rm \
+    -v /home/odity/Music:/app/music \
+    -v /run/user/$(id -u)/pulse:/run/user/1000/pulse \
+    -e PULSE_RUNTIME_PATH=/run/user/1000/pulse \
+    oplayer
+```
+
