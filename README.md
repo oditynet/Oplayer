@@ -18,7 +18,7 @@ Music player with supports OGG, AIFF, WAV, MP3, FLAC in a console and Docker
 Player can only decoding a audio streams. The FLAC and MP3 formats are implemented through the mpg123 package, and the other formats are self-written
 
 Version 0.4:
-- add radio ( mpv )
+- add radio ( mplayer )
 
 Version 0.3.1:
 - add pause
@@ -37,10 +37,10 @@ Version 0.2:
 Build prepare:
 ```
 # Astra linux
-sudo apt-get install libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio mpv
+sudo apt-get install libmpg123-devel libflac-devel libvorbis-devel gcc  libpulseaudio-devel  pulseaudio mplayer
 
 # Pacman
-yay -S mpg123-dev mpv
+yay -S mpg123-dev mplayer
 ```
 
 Build:
