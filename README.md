@@ -36,3 +36,9 @@ Clean:
 ```
 make clean
 ```
+
+Navigation:
+ - j - Down
+ - k - Up
+ - r - loops mode
+ - left/right arrow - +10sec / -10sec
