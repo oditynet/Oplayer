@@ -1,9 +1,17 @@
-<div align="center">
 
+<div align="center">
   <h1>  Oplayer </h1>
+  
 </div>
 
+<img alt="GitHub code size in bytes" src="https://img.shields.io/github/languages/code-size/oditynet/Oplayer"></img>
+<img alt="GitHub license" src="https://img.shields.io/github/license/oditynet/Oplayer"></img>
+<img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/oditynet/Oplayer"></img>
+<img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/oditynet/Oplayer"></img>
+
 <img src="https://github.com/oditynet/Oplayer/blob/main/screen1.png" height="auto" />
+
+## 📋 I can...
 
 Music player with supports OGG, AIFF, WAV, MP3, FLAC in a console.
 
@@ -18,6 +26,8 @@ Version 0.3:
 Version 0.2:
 - add console GUI
 - add navigation, loop play
+
+## 🛠️ Prepare 
 
 Build prepare:
 ```
