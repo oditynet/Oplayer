@@ -14,6 +14,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <ctype.h>  
 
 #define MAX_FILES 1000
 #define MAX_FILENAME 512
@@ -767,153 +768,48 @@ void adjust_volume(float change) {
 }
 
 // Поток ввода
-void* input_thread(void* arg) {
-    static float previous_volume = 0.7f;
-    static char search_buffer[256] = "";
-    static int search_len = 0;
-    static time_t last_search_time = 0;
+/*void* input_thread(void* arg) {
+    (void)arg;
     
     while (1) {
-        int ch = getchar();
+        int c = getchar();
         
-        if (ch == EOF) {
+        if (c == EOF) {
             usleep(10000);
             continue;
         }
         
-        // Сброс поиска по таймауту (1 секунда)
-        if (search_len > 0 && time(NULL) - last_search_time > 1) {
-            search_buffer[0] = '\0';
-            search_len = 0;
-        }
-        
-        // Обработка символов для поиска (буквы, цифры) - только когда не играет музыка ИЛИ на паузе
-        if (!global_playing && ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || 
-            (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.')) {
-            
-            // Добавляем символ в буфер поиска
-            if (search_len < 255) {
-                search_buffer[search_len++] = (char)ch;
-                search_buffer[search_len] = '\0';
-                last_search_time = time(NULL);
+        switch (c) {
+            case 'q': // Выход
+                stop_current_playback();
+                set_nonblocking_mode(false);
+                clear_screen();
+                exit(0);
+                break;
                 
-                // Ищем файл/папку, начинающуюся с введенной строки
-                int found_index = -1;
-                for (int i = 0; i < file_manager.file_count; i++) {
-                    FileEntry* entry = &file_manager.files[i];
-                    if (strncasecmp(entry->name, search_buffer, search_len) == 0) {
-                        found_index = i;
-                        break;
-                    }
-                }
-                
-                if (found_index != -1) {
-                    file_manager.selected_index = found_index;
-                    printf("\rSearch: %s", search_buffer);
-                    fflush(stdout);
-                }
-            }
-            continue;
-        }
-        
-        // Обработка управляющих клавиш
-        switch (ch) {
-            case 27: // Escape sequence (стрелки)
-                {
-                    int ch2 = getchar();
-                    if (ch2 == 91) { // [
-                        int ch3 = getchar();
-                        
-                        // Если музыка играет и НЕ на паузе - стрелки управляют воспроизведением
-                        if (global_playing && !global_paused) {
-                            if (ch3 == 'C') { // Стрелка вправо - перемотка вперед
-                                seek_forward();
-                            } else if (ch3 == 'D') { // Стрелка влево - перемотка назад
-                                seek_backward();
-                            } else if (ch3 == 'A') { // Стрелка вверх - увеличить громкость
-                                adjust_volume(0.1f);
-                            } else if (ch3 == 'B') { // Стрелка вниз - уменьшить громкость
-                                adjust_volume(-0.1f);
-                            }
-                        } else {
-                            // Если музыка не играет ИЛИ на паузе - стрелки управляют навигацией по каталогу
-                            if (ch3 == 'A') { // Стрелка вверх - вверх по списку
-                                if (file_manager.selected_index > 0) {
-                                    file_manager.selected_index--;
-                                    search_buffer[0] = '\0';
-                                    search_len = 0;
-                                }
-                            } else if (ch3 == 'B') { // Стрелка вниз - вниз по списку
-                                if (file_manager.selected_index < file_manager.file_count - 1) {
-                                    file_manager.selected_index++;
-                                    search_buffer[0] = '\0';
-                                    search_len = 0;
-                                }
-                            } else if (ch3 == 'C') { // Стрелка вправо - войти в папку или воспроизвести
-                                if (file_manager.selected_index < file_manager.file_count) {
-                                    FileEntry* entry = &file_manager.files[file_manager.selected_index];
-                                    if (entry->is_directory && !entry->is_parent_dir) {
-                                        char new_path[MAX_PATH];
-                                        snprintf(new_path, sizeof(new_path), "%s/%s", 
-                                               file_manager.current_path, entry->name);
-                                        load_directory(new_path);
-                                        search_buffer[0] = '\0';
-                                        search_len = 0;
-                                    } else if (entry->is_audio_file) {
-                                        play_audio_file(entry->full_path);
-                                    }
-                                }
-                            } else if (ch3 == 'D') { // Стрелка влево - выход из папки
-                                char* last_slash = strrchr(file_manager.current_path, '/');
-                                if (last_slash) {
-                                    if (last_slash == file_manager.current_path) {
-                                        strcpy(file_manager.current_path, "/");
-                                    } else {
-                                        *last_slash = '\0';
-                                    }
-                                    load_directory(file_manager.current_path);
-                                    search_buffer[0] = '\0';
-                                    search_len = 0;
-                                }
-                            }
-                        }
-                    }
+            case 'j': // Вниз
+                if (file_manager.selected_index < file_manager.file_count - 1) {
+                    file_manager.selected_index++;
                 }
                 break;
                 
-            case 'j': // Вниз (альтернатива)
-            case 'B':
-                // Навигация работает, когда музыка не играет ИЛИ на паузе
-                if (!global_playing || global_paused) {
-                    if (file_manager.selected_index < file_manager.file_count - 1) {
-                        file_manager.selected_index++;
-                        search_buffer[0] = '\0';
-                        search_len = 0;
-                    }
+            case 'k': // Вверх
+                if (file_manager.selected_index > 0) {
+                    file_manager.selected_index--;
                 }
                 break;
                 
-            case 'k': // Вверх (альтернатива)
-                if (!global_playing || global_paused) {
-                    if (file_manager.selected_index > 0) {
-                        file_manager.selected_index--;
-                        search_buffer[0] = '\0';
-                        search_len = 0;
-                    }
-                }
-                break;
-                
-            case '\n': // Enter - воспроизведение или вход в папку
-            case '\r':
-                // Enter работает, когда музыка не играет ИЛИ на паузе
-                if ((!global_playing || global_paused) && file_manager.selected_index < file_manager.file_count) {
-                    FileEntry* entry = &file_manager.files[file_manager.selected_index];
-                    if (entry->is_directory) {
-                        char new_path[MAX_PATH];
-                        if (entry->is_parent_dir) {
+            case '\n': // Enter - воспроизведение/открытие папки
+                if (file_manager.selected_index < file_manager.file_count) {
+                    FileEntry* selected = &file_manager.files[file_manager.selected_index];
+                    
+                    if (selected->is_directory) {
+                        if (selected->is_parent_dir) {
+                            // Переход на уровень выше
                             char* last_slash = strrchr(file_manager.current_path, '/');
                             if (last_slash) {
                                 if (last_slash == file_manager.current_path) {
+                                    // Мы в корневой директории
                                     strcpy(file_manager.current_path, "/");
                                 } else {
                                     *last_slash = '\0';
@@ -921,44 +817,38 @@ void* input_thread(void* arg) {
                             }
                             load_directory(file_manager.current_path);
                         } else {
+                            // Переход в папку
+                            char new_path[MAX_PATH];
                             snprintf(new_path, sizeof(new_path), "%s/%s", 
-                                   file_manager.current_path, entry->name);
+                                   file_manager.current_path, selected->name);
                             load_directory(new_path);
                         }
-                        search_buffer[0] = '\0';
-                        search_len = 0;
-                    } else if (entry->is_audio_file) {
-                        play_audio_file(entry->full_path);
+                    } else if (selected->is_audio_file) {
+                        play_audio_file(selected->full_path);
                     }
                 }
                 break;
                 
             case ' ': // Пробел - пауза/продолжение
-                if (global_playing) {
-                    toggle_pause();
-                }
-                break;
-                
-            case 'r': // Смена режима воспроизведения
-                if (global_playing) {
-                    file_manager.play_mode = (file_manager.play_mode + 1) % 3;
-                }
+                toggle_pause();
                 break;
                 
             case 'n': // Следующий трек
-                if (global_playing) {
-                    play_next_track();
-                }
+                play_next_track();
                 break;
                 
             case 'p': // Предыдущий трек
-                if (global_playing) {
-                    play_previous_track();
-                }
+                play_previous_track();
+                break;
+                
+            case 'r': // Смена режима воспроизведения
+                file_manager.play_mode = (file_manager.play_mode + 1) % 3;
+                printf("\rMode: %s        ", get_play_mode_name(file_manager.play_mode));
+                fflush(stdout);
                 break;
                 
             case '+': // Увеличить громкость
-            case '=':
+            case '=': // На той же клавише что и +
                 adjust_volume(0.1f);
                 break;
                 
@@ -968,6 +858,7 @@ void* input_thread(void* arg) {
                 
             case 'm': // Mute/Unmute
                 {
+                    static float previous_volume = 1.0f;
                     if (global_volume > 0.0f) {
                         previous_volume = global_volume;
                         global_volume = 0.0f;
@@ -980,52 +871,256 @@ void* input_thread(void* arg) {
                 }
                 break;
                 
-            case 8:  // Backspace
-            case 127: // Delete
-                // Поиск работает, когда музыка не играет ИЛИ на паузе
-                if ((!global_playing || global_paused) && search_len > 0) {
-                    search_buffer[--search_len] = '\0';
-                    last_search_time = time(NULL);
-                    
-                    if (search_len > 0) {
-                        int found_index = -1;
-                        for (int i = 0; i < file_manager.file_count; i++) {
-                            FileEntry* entry = &file_manager.files[i];
-                            if (strncasecmp(entry->name, search_buffer, search_len) == 0) {
-                                found_index = i;
-                                break;
-                            }
-                        }
-                        if (found_index != -1) {
-                            file_manager.selected_index = found_index;
-                        }
-                        printf("\rSearch: %s", search_buffer);
-                    } else {
-                        printf("\rSearch: ");
-                    }
-                    fflush(stdout);
-                }
-                break;
-                
-            case '?': // Поиск
-                if (!global_playing || global_paused) {
-                    search_buffer[0] = '\0';
-                    search_len = 0;
-                    last_search_time = time(NULL);
-                    printf("\rSearch: ");
-                    fflush(stdout);
-                }
-                break;
-                
             case 'h': // Помощь
                 file_manager.show_help = !file_manager.show_help;
                 break;
                 
+            case 27: // Escape sequence (стрелки)
+                {
+                    int c2 = getchar();
+                    if (c2 == EOF) break;
+                    
+                    if (c2 == '[') {
+                        int c3 = getchar();
+                        if (c3 == EOF) break;
+                        
+                        switch (c3) {
+                            case 'A': // Стрелка вверх
+                                if (file_manager.selected_index > 0) {
+                                    file_manager.selected_index--;
+                                }
+                                break;
+                            case 'B': // Стрелка вниз
+                                if (file_manager.selected_index < file_manager.file_count - 1) {
+                                    file_manager.selected_index++;
+                                }
+                                break;
+                            case 'C': // Стрелка вправо (перемотка вперед)
+                                seek_forward();
+                                break;
+                            case 'D': // Стрелка влево (перемотка назад)
+                                seek_backward();
+                                break;
+                        }
+                    }
+                }
+                break;
+        }
+    }
+    
+    return NULL;
+}*/
+// Поток обработки ввода
+void* input_thread(void* arg) {
+    (void)arg;
+    char last_key = 0;
+    time_t last_key_time = 0;
+    
+    while (1) {
+        int c = getchar();
+        
+        if (c == EOF) {
+            usleep(10000);
+            continue;
+        }
+        
+        // Поиск по буквам (только когда музыка не играет)
+        if (!global_playing && !global_paused) {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+                time_t now = time(NULL);
+                
+                if (last_key_time && (now - last_key_time > 1 || last_key != c)) {
+                    last_key = 0;
+                }
+                
+                last_key = c;
+                last_key_time = now;
+                
+                int start_index = file_manager.selected_index + 1;
+                if (start_index >= file_manager.file_count) {
+                    start_index = 0;
+                }
+                
+                int found = -1;
+                for (int i = 0; i < file_manager.file_count; i++) {
+                    int idx = (start_index + i) % file_manager.file_count;
+                    FileEntry* entry = &file_manager.files[idx];
+                    
+                    if (entry->is_parent_dir) continue;
+                    
+                    char first_char = entry->name[0];
+                    char search_char = tolower(c);
+                    
+                    if (tolower(first_char) == search_char) {
+                        found = idx;
+                        break;
+                    }
+                }
+                
+                if (found != -1) {
+                    file_manager.selected_index = found;
+                    printf("\rJump to: %c       ", c);
+                    fflush(stdout);
+                }
+                continue;
+            }
+        }
+        
+        switch (c) {
             case 'q': // Выход
+            case 'Q':
                 stop_current_playback();
-                global_playing = false;
-                global_paused = false;
+                set_nonblocking_mode(false);
+                clear_screen();
                 exit(0);
+                break;
+                
+            case 'j': // Вниз по списку
+            case 'J':
+                if (file_manager.selected_index < file_manager.file_count - 1) {
+                    file_manager.selected_index++;
+                    last_key = 0;
+                }
+                break;
+                
+            case 'k': // Вверх по списку
+            case 'K':
+                if (file_manager.selected_index > 0) {
+                    file_manager.selected_index--;
+                    last_key = 0;
+                }
+                break;
+                
+            case '\n': // Enter - Play/Stop/Open
+                if (global_playing && !global_paused) {
+                    // Если музыка играет - остановить
+                    stop_current_playback();
+                } else if (global_paused) {
+                    // Если на паузе - продолжить
+                    toggle_pause();
+                } else {
+                    // Музыка не играет - открыть папку или воспроизвести файл
+                    if (file_manager.selected_index < file_manager.file_count) {
+                        FileEntry* selected = &file_manager.files[file_manager.selected_index];
+                        
+                        if (selected->is_directory) {
+                            if (selected->is_parent_dir) {
+                                // Переход на уровень выше
+                                char* last_slash = strrchr(file_manager.current_path, '/');
+                                if (last_slash) {
+                                    if (last_slash == file_manager.current_path) {
+                                        strcpy(file_manager.current_path, "/");
+                                    } else {
+                                        *last_slash = '\0';
+                                    }
+                                }
+                                load_directory(file_manager.current_path);
+                            } else {
+                                // Переход в папку
+                                char new_path[MAX_PATH];
+                                snprintf(new_path, sizeof(new_path), "%s/%s", 
+                                       file_manager.current_path, selected->name);
+                                load_directory(new_path);
+                            }
+                            last_key = 0;
+                        } else if (selected->is_audio_file) {
+                            play_audio_file(selected->full_path);
+                        }
+                    }
+                }
+                break;
+                
+            case ' ': // Пробел - пауза/продолжение
+                toggle_pause();
+                break;
+                
+            case 'n': // Следующий трек
+            case 'N':
+                if (global_playing || global_paused) {
+                    play_next_track();
+                }
+                break;
+                
+            case 'p': // Предыдущий трек
+            case 'P':
+                if (global_playing || global_paused) {
+                    play_previous_track();
+                }
+                break;
+                
+            case 's': // Stop - остановка
+            case 'S':
+                stop_current_playback();
+                break;
+                
+            case 'r': // Смена режима воспроизведения
+            case 'R':
+                file_manager.play_mode = (file_manager.play_mode + 1) % 3;
+                break;
+                
+            case '+': // Увеличить громкость
+            case '=':
+                adjust_volume(0.1f);
+                break;
+                
+            case '-': // Уменьшить громкость
+            case '_':
+                adjust_volume(-0.1f);
+                break;
+                
+            case 'm': // Mute/Unmute
+            case 'M':
+                {
+                    static float previous_volume = 1.0f;
+                    if (global_volume > 0.0f) {
+                        previous_volume = global_volume;
+                        global_volume = 0.0f;
+                    } else {
+                        global_volume = previous_volume;
+                    }
+                }
+                break;
+                
+            case 'h': // Help
+            case 'H':
+                file_manager.show_help = !file_manager.show_help;
+                break;
+                
+            case 27: // Escape sequence (стрелки)
+                {
+                    int c2 = getchar();
+                    if (c2 == EOF) break;
+                    
+                    if (c2 == '[') {
+                        int c3 = getchar();
+                        if (c3 == EOF) break;
+                        
+                        switch (c3) {
+                            case 'A': // Стрелка вверх - навигация
+                                if (file_manager.selected_index > 0) {
+                                    file_manager.selected_index--;
+                                    last_key = 0;
+                                }
+                                break;
+                            case 'B': // Стрелка вниз - навигация
+                                if (file_manager.selected_index < file_manager.file_count - 1) {
+                                    file_manager.selected_index++;
+                                    last_key = 0;
+                                }
+                                break;
+                            case 'C': // Стрелка вправо - перемотка вперед
+                                if (global_playing || global_paused) {
+                                    seek_forward();
+                                }
+                                break;
+                            case 'D': // Стрелка влево - перемотка назад
+                                if (global_playing || global_paused) {
+                                    seek_backward();
+                                }
+                                break;
+                        }
+                    }
+                }
                 break;
         }
     }
